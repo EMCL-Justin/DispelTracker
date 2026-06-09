@@ -309,6 +309,7 @@ local uiState = {
 local mainFrame
 local rows = {}
 local titleText, sessionLabel, backBtn
+local RefreshUI  -- forward declaration; defined after the view renderers
 
 local function MakeRow(parent, index)
     local f = CreateFrame("Button", nil, parent)
@@ -603,7 +604,7 @@ end
 -- Refresh dispatcher
 -- ============================================================
 
-function RefreshUI()
+RefreshUI = function()
     if not mainFrame or not mainFrame:IsShown() then return end
     local v = uiState.view
     if     v == "sessions"   then RenderSessions()
@@ -655,8 +656,16 @@ end
 local function CheckZone()
     local zone = GetRealZoneText()
     DBG("Zone check:", zone)
-    if ARENA_ZONES[zone] then OnArenaEnter(zone)
-    else if inArena and not forcedSession then OnArenaExit() end end
+    if ARENA_ZONES[zone] then
+        -- A leftover forced session would swallow the real match — close it out first
+        if forcedSession then
+            forcedSession = false
+            OnArenaExit()
+        end
+        OnArenaEnter(zone)
+    elseif inArena and not forcedSession then
+        OnArenaExit()
+    end
 end
 
 -- ============================================================
