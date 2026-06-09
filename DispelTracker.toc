@@ -1,0 +1,8 @@
+﻿## Interface: 20504
+## Title: DispelTracker
+## Notes: Tracks arena dispels — who dispelled, who they targeted, and what they removed
+## Author:
+## Version: 1.0
+## SavedVariables: DispelTrackerDB
+
+DispelTracker.lua
