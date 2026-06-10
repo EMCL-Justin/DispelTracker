@@ -702,11 +702,24 @@ local recentCures = {}
 -- Used to detect early removal vs natural expiry for non-stacking poisons
 local debuffApplied = {}
 
+-- Poison-dispel-type debuffs whose names don't contain "Poison"
+-- (TBC hunter stings are all poison dispel type)
+local POISON_TYPE_EXTRAS = {
+    ["Viper Sting"]   = true,
+    ["Serpent Sting"] = true,
+    ["Scorpid Sting"] = true,
+    ["Wyvern Sting"]  = true,
+}
+
 -- Non-stacking arena poisons with known durations (seconds)
 -- If removed with more than EARLY_REMOVAL_BUFFER remaining, credit the totem
 local NONSTACKING_POISON_DURATION = {
     ["Crippling Poison"]    = 12,
     ["Mind-Numbing Poison"] = 10,
+    ["Viper Sting"]         = 8,
+    ["Serpent Sting"]       = 15,
+    ["Scorpid Sting"]       = 20,
+    ["Wyvern Sting"]        = 12,
 }
 local EARLY_REMOVAL_BUFFER = 1.5  -- seconds — if more time than this remains, it was actively removed
 
@@ -807,7 +820,7 @@ local function OnCombatLog()
 
     -- ── Heuristic totem cleanse ──
     if (subevent == "SPELL_AURA_REMOVED" or subevent == "SPELL_AURA_REMOVED_DOSE") and p15 == "DEBUFF" then
-        if not spellName:find("Poison") then return end
+        if not (spellName:find("Poison") or POISON_TYPE_EXTRAS[spellName]) then return end
 
         local owner = GetActiveTotemOwner()
         if not owner then return end
