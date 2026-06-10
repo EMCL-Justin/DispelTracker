@@ -203,7 +203,7 @@ local function tier(color, ...)
 end
 -- Purple — absolute immunities / must-know removals
 tier(C_TIER_IMMUNITY, "Divine Shield", "Ice Block", "Blessing of Protection",
-     "Curse of Tongues")
+     "Curse of Tongues", "Fear Ward")
 -- Orange — game-changing cooldowns
 tier(C_TIER_MAJOR, "Innervate", "Fel Domination", "Avenging Wrath",
      "Power Infusion", "Bloodlust", "Heroism", "Nature's Swiftness")
