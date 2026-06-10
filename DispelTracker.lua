@@ -188,6 +188,40 @@ local function AddLine(lines, text, c)
 end
 
 -- ============================================================
+-- Removed-spell importance tiers (color in tooltips)
+-- ============================================================
+
+local C_TIER_IMMUNITY = { r = 0.8,  g = 0.4,  b = 1.0  }  -- purple
+local C_TIER_MAJOR    = { r = 1.0,  g = 0.55, b = 0.1  }  -- orange
+local C_TIER_STRONG   = { r = 0.3,  g = 0.6,  b = 1.0  }  -- blue
+local C_TIER_MINOR    = { r = 0.4,  g = 0.9,  b = 0.4  }  -- green
+-- everything else falls through to the line's default color (grey/white)
+
+local SPELL_TIER_COLORS = {}
+local function tier(color, ...)
+    for _, s in ipairs({...}) do SPELL_TIER_COLORS[s] = color end
+end
+-- Purple — absolute immunities / must-know removals
+tier(C_TIER_IMMUNITY, "Divine Shield", "Ice Block", "Blessing of Protection",
+     "Curse of Tongues")
+-- Orange — game-changing cooldowns
+tier(C_TIER_MAJOR, "Innervate", "Fel Domination", "Avenging Wrath",
+     "Power Infusion", "Bloodlust", "Heroism", "Nature's Swiftness")
+-- Blue — strong defensives + magic CC
+tier(C_TIER_STRONG, "Power Word: Shield", "Earth Shield", "Ice Barrier",
+     "Icy Veins", "Hammer of Justice", "Repentance", "Polymorph",
+     "Entangling Roots", "Cyclone", "Fear", "Seduction", "Blessing of Sacrifice")
+-- Green — HoTs / minor buffs
+tier(C_TIER_MINOR, "Renew", "Regrowth", "Rejuvenation", "Inner Fire",
+     "Water Shield", "Exhaustion", "Sated")
+
+local function RemovedSpellColored(spellName)
+    local c = SPELL_TIER_COLORS[spellName]
+    if c then return ColorHex(c, spellName) end
+    return spellName  -- no tier: inherit the line's default color
+end
+
+-- ============================================================
 -- Tooltip builders
 -- ============================================================
 
@@ -254,7 +288,7 @@ local function BuildDispellerTooltip(entry, name)
                     viaStr = "  |cff888888via "..table.concat(parts,", ").."|r"
                 end
             end
-            AddLine(lines, "    • "..spellName.."  x"..total..viaStr, C_DIM)
+            AddLine(lines, "    • "..RemovedSpellColored(spellName).."  x"..total..viaStr, C_DIM)
         end
     end
     return lines
@@ -278,7 +312,7 @@ local function BuildTargetTooltip(targetEntry, targetName, dispName)
                 viaStr = "  |cff888888via "..table.concat(parts,", ").."|r"
             end
         end
-        AddLine(lines, "  • "..spellName.."  x"..total..viaStr, C_WHITE)
+        AddLine(lines, "  • "..RemovedSpellColored(spellName).."  x"..total..viaStr, C_WHITE)
     end
     return lines
 end
