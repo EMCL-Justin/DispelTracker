@@ -250,19 +250,26 @@ local function BuildDispellerTooltip(entry, name)
 
     AddLine(lines, "Abilities used:", C_DIM)
     for spellName, su in SortedPairs(entry.spellsUsed,
-            function(v) return (v.offensive or 0)+(v.defensive or 0)+(v.resisted or 0) end) do
-        local castTotal = (su.offensive or 0) + (su.defensive or 0)
-        local castStr
+            function(v) return (v.offensive or 0)+(v.defensive or 0)+(v.resisted or 0)
+                + (v.casts or 0)*0.01 + (v.attempts or 0)*0.001 end) do
+        local stripped = (su.offensive or 0) + (su.defensive or 0)
+        local strippedStr
         if (su.offensive or 0) > 0 and (su.defensive or 0) > 0 then
-            castStr = "x"..castTotal
+            strippedStr = stripped.." stripped"
                 .." ("..ColorHex(C_SPELL_OFF, su.offensive.." off")
                 .." / "..ColorHex(C_SPELL_DEF, su.defensive.." def")..")"
         elseif (su.offensive or 0) > 0 then
-            castStr = ColorHex(C_SPELL_OFF, "x"..castTotal.." off")
+            strippedStr = ColorHex(C_SPELL_OFF, stripped.." stripped (off)")
         elseif (su.defensive or 0) > 0 then
-            castStr = ColorHex(C_SPELL_DEF, "x"..castTotal.." def")
+            strippedStr = ColorHex(C_SPELL_DEF, stripped.." stripped (def)")
         else
-            castStr = "x0"
+            strippedStr = "0 stripped"
+        end
+        local castStr
+        if (su.casts or 0) > 0 then
+            castStr = su.casts.." cast, "..strippedStr
+        else
+            castStr = strippedStr  -- totems and pre-cast-tracking data
         end
         local resistStr = ""
         if (su.resisted or 0) > 0 then
@@ -738,6 +745,22 @@ local DIRECT_CURE_SPELLS = {
     ["Insignia of the Horde"]     = true,
 }
 
+-- Dispel spells whose casts we count via SPELL_CAST_SUCCESS ("5 cast, 3 stripped")
+local DISPEL_CAST_SPELLS = {
+    ["Purge"]               = true,  -- Shaman
+    ["Dispel Magic"]        = true,  -- Priest
+    ["Mass Dispel"]         = true,  -- Priest
+    ["Cleanse"]             = true,  -- Paladin
+    ["Purify"]              = true,  -- Paladin
+    ["Cure Poison"]         = true,  -- Druid, Shaman
+    ["Abolish Poison"]      = true,  -- Druid
+    ["Cure Disease"]        = true,  -- Priest, Shaman
+    ["Abolish Disease"]     = true,  -- Priest
+    ["Remove Curse"]        = true,  -- Druid
+    ["Remove Lesser Curse"] = true,  -- Mage
+    ["Devour Magic"]        = true,  -- Warlock felhunter
+}
+
 -- totemGUID → { ownerName, totemSpell, expiresAt }
 local activeTotemWindows = {}
 
@@ -880,12 +903,22 @@ local function OnCombatLog()
 
     if not inArena or not currentSession then return end
 
-    -- ── Direct cure cast — record so we don't double-count ──
-    if subevent == "SPELL_CAST_SUCCESS" and DIRECT_CURE_SPELLS[spellName] then
-        local cureTarget = (destName and destName ~= "") and destName or sourceName
-        if cureTarget then
-            recentCures[cureTarget] = GetTime()
-            DBG("Direct cure:", spellName, "on", cureTarget)
+    if subevent == "SPELL_CAST_SUCCESS" then
+        -- ── Count dispel casts (a cast may strip nothing — that's the point) ──
+        if DISPEL_CAST_SPELLS[spellName] and sourceName and sourceName ~= "" then
+            local entry = EnsureDispeller(currentSession, sourceName)
+            local su    = EnsureSpellUsed(entry, spellName)
+            su.casts = (su.casts or 0) + 1
+            DBG("Dispel cast:", sourceName, spellName, "#"..su.casts)
+            if mainFrame and mainFrame:IsShown() then RefreshUI() end
+        end
+        -- ── Direct cure cast — suppresses totem credit briefly ──
+        if DIRECT_CURE_SPELLS[spellName] then
+            local cureTarget = (destName and destName ~= "") and destName or sourceName
+            if cureTarget then
+                recentCures[cureTarget] = GetTime()
+                DBG("Direct cure:", spellName, "on", cureTarget)
+            end
         end
         return
     end
