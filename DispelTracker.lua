@@ -728,6 +728,14 @@ local DIRECT_CURE_SPELLS = {
     ["Dispel Magic"]   = true,  -- Priest (magic debuffs)
     ["Remove Curse"]   = true,  -- Mage, Druid
     ["Cleanse Spirit"] = true,  -- Shaman (curse)
+    -- Self-cleanses that also remove poisons/snares early
+    ["Cloak of Shadows"]          = true,  -- Rogue
+    ["Stoneform"]                 = true,  -- Dwarf racial
+    ["Escape Artist"]             = true,  -- Gnome racial
+    ["Medallion of the Alliance"] = true,  -- PvP trinket
+    ["Medallion of the Horde"]    = true,
+    ["Insignia of the Alliance"]  = true,
+    ["Insignia of the Horde"]     = true,
 }
 
 -- totemGUID → { ownerName, totemSpell, expiresAt }
@@ -740,18 +748,13 @@ local recentCures = {}
 -- Used to detect early removal vs natural expiry for non-stacking poisons
 local debuffApplied = {}
 
--- Poison-dispel-type debuffs whose names don't contain "Poison"
--- (TBC hunter stings are all poison dispel type)
-local POISON_TYPE_EXTRAS = {
-    ["Viper Sting"]   = true,
-    ["Serpent Sting"] = true,
-    ["Scorpid Sting"] = true,
-    ["Wyvern Sting"]  = true,
-}
-
--- Non-stacking arena poisons with known durations (seconds)
--- If removed with more than EARLY_REMOVAL_BUFFER remaining, credit the totem
-local NONSTACKING_POISON_DURATION = {
+-- Known poison debuff durations in seconds. Includes hunter stings (poison
+-- dispel type without "Poison" in the name). A full SPELL_AURA_REMOVED is only
+-- credited to the totem if it happened well before the duration would run out;
+-- otherwise it's treated as natural expiry.
+local POISON_DURATION = {
+    ["Wound Poison"]        = 15,
+    ["Deadly Poison"]       = 12,
     ["Crippling Poison"]    = 12,
     ["Mind-Numbing Poison"] = 10,
     ["Viper Sting"]         = 8,
@@ -865,9 +868,11 @@ local function OnCombatLog()
         return
     end
 
-    -- ── Track non-stacking poison application times (for expiry detection) ──
-    if (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_APPLIED_DOSE")
-       and NONSTACKING_POISON_DURATION[spellName] and destName then
+    -- ── Track poison application/refresh times (for expiry detection) ──
+    -- Refreshes and new stacks reset the duration, so always keep the latest time
+    if (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_APPLIED_DOSE"
+        or subevent == "SPELL_AURA_REFRESH")
+       and POISON_DURATION[spellName] and destName then
         debuffApplied[destName] = debuffApplied[destName] or {}
         debuffApplied[destName][spellName] = GetTime()
         return
@@ -877,9 +882,10 @@ local function OnCombatLog()
 
     -- ── Direct cure cast — record so we don't double-count ──
     if subevent == "SPELL_CAST_SUCCESS" and DIRECT_CURE_SPELLS[spellName] then
-        if destName then
-            recentCures[destName] = GetTime()
-            DBG("Direct cure:", spellName, "on", destName)
+        local cureTarget = (destName and destName ~= "") and destName or sourceName
+        if cureTarget then
+            recentCures[cureTarget] = GetTime()
+            DBG("Direct cure:", spellName, "on", cureTarget)
         end
         return
     end
@@ -902,7 +908,7 @@ local function OnCombatLog()
 
     -- ── Heuristic totem cleanse ──
     if (subevent == "SPELL_AURA_REMOVED" or subevent == "SPELL_AURA_REMOVED_DOSE") and p15 == "DEBUFF" then
-        if not (spellName:find("Poison") or POISON_TYPE_EXTRAS[spellName]) then return end
+        if not (POISON_DURATION[spellName] or spellName:find("Poison")) then return end
 
         local owner = GetActiveTotemOwner()
         if not owner then return end
@@ -913,20 +919,22 @@ local function OnCombatLog()
             return
         end
 
+        -- Natural expiry also fires SPELL_AURA_REMOVED (all stacks drop at once).
+        -- Credit the totem only if the poison still had real time left, measured
+        -- from the most recent application/refresh.
+        -- (A REMOVED_DOSE never happens on expiry — single stacks only drop to
+        -- active removal — so doses skip this check.)
         if subevent == "SPELL_AURA_REMOVED" then
-            -- For non-stacking poisons, check if removed early vs natural expiry
-            local duration = NONSTACKING_POISON_DURATION[spellName]
+            local duration = POISON_DURATION[spellName]
             if duration then
                 local applied = debuffApplied[destName] and debuffApplied[destName][spellName]
-                if not applied then return end  -- don't know when applied, skip
+                if not applied then return end  -- never saw it applied; can't judge, skip
                 local timeRemaining = duration - (GetTime() - applied)
                 if timeRemaining <= EARLY_REMOVAL_BUFFER then
                     DBG("Totem skipped — likely natural expiry of", spellName, "(", timeRemaining, "s remaining)")
                     return
                 end
             end
-            -- Stacking poisons (Wound/Deadly) removed via SPELL_AURA_REMOVED = last stack gone
-            -- No duration check needed — the DOSE events already counted each earlier stack
         end
 
         local totemLabel = "Poison Cleansing Totem"
