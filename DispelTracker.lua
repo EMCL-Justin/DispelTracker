@@ -268,7 +268,11 @@ local function BuildDispellerTooltip(entry, name)
         if (su.resisted or 0) > 0 then
             resistStr = "  "..ColorHex(C_RESIST, su.resisted.." resisted")
         end
-        AddLine(lines, "  "..spellName.."  "..castStr..resistStr, C_WHITE)
+        local tickStr = ""
+        if (su.attempts or 0) > 0 then
+            tickStr = "  |cff888888("..su.attempts.." ticks)|r"
+        end
+        AddLine(lines, "  "..spellName.."  "..castStr..resistStr..tickStr, C_WHITE)
     end
     AddLine(lines, " ", C_DIM)
 
@@ -757,8 +761,38 @@ local NONSTACKING_POISON_DURATION = {
 }
 local EARLY_REMOVAL_BUFFER = 1.5  -- seconds — if more time than this remains, it was actively removed
 
+-- Any new water totem from the same shaman replaces the previous one
+local WATER_TOTEMS = {
+    ["Poison Cleansing Totem"]  = true,
+    ["Disease Cleansing Totem"] = true,
+    ["Healing Stream Totem"]    = true,
+    ["Mana Spring Totem"]       = true,
+    ["Mana Tide Totem"]         = true,
+    ["Fire Resistance Totem"]   = true,
+}
+
+local TOTEM_PULSE_INTERVAL = 5  -- cleanse attempt on placement, then every 5s while alive
+
+local function EndTotemWindow(guid, reason)
+    local tw = activeTotemWindows[guid]
+    if not tw then return end
+    if tw.ticker then tw.ticker:Cancel() end
+    activeTotemWindows[guid] = nil
+    DBG("Totem window ended ("..reason.."):", tw.totemSpell, "by", tw.ownerName)
+end
+
+local function RecordTotemTick(ownerName, totemSpell)
+    if not inArena or not currentSession then return end
+    local entry = EnsureDispeller(currentSession, ownerName)
+    local su    = EnsureSpellUsed(entry, totemSpell)
+    su.attempts = (su.attempts or 0) + 1
+    DBG("Totem tick", su.attempts, "-", totemSpell, "by", ownerName)
+end
+
 ResetTotemMap = function()
-    wipe(activeTotemWindows)
+    for guid in pairs(activeTotemWindows) do
+        EndTotemWindow(guid, "session end")
+    end
     wipe(recentCures)
     wipe(debuffApplied)
 end
@@ -793,16 +827,31 @@ local function OnCombatLog()
     local auraType = p18  -- used by SPELL_DISPEL handlers below
 
     -- ── Totem placement (fires anywhere, so we can map before arena guard) ──
-    if subevent == "SPELL_SUMMON" and
-       (spellName == "Poison Cleansing Totem" or spellName == "Disease Cleansing Totem") then
-        if destGUID and sourceName then
+    if subevent == "SPELL_SUMMON" and WATER_TOTEMS[spellName] then
+        -- Dropping any water totem replaces the shaman's previous one
+        if sourceName then
+            for guid, tw in pairs(activeTotemWindows) do
+                if tw.ownerName == sourceName then EndTotemWindow(guid, "replaced") end
+            end
+        end
+        if (spellName == "Poison Cleansing Totem" or spellName == "Disease Cleansing Totem")
+           and destGUID and sourceName then
             local now = GetTime()
-            activeTotemWindows[destGUID] = {
+            local tw = {
                 ownerName  = sourceName,
                 totemSpell = spellName,
                 placedAt   = now,
                 expiresAt  = now + TOTEM_DURATION,
             }
+            activeTotemWindows[destGUID] = tw
+            -- First cleanse attempt fires the moment the totem is placed,
+            -- then every 5s until it expires (ticker self-cancels), dies, or is replaced
+            RecordTotemTick(sourceName, spellName)
+            local remainingTicks = math.floor(TOTEM_DURATION / TOTEM_PULSE_INTERVAL)
+            tw.ticker = C_Timer.NewTicker(TOTEM_PULSE_INTERVAL, function()
+                RecordTotemTick(tw.ownerName, tw.totemSpell)
+                if mainFrame and mainFrame:IsShown() then RefreshUI() end
+            end, remainingTicks)
             DBG("Totem placed:", spellName, "by", sourceName, "(", TOTEM_DURATION, "s window)")
         end
         return
@@ -811,8 +860,7 @@ local function OnCombatLog()
     -- ── Totem death — shrink the window immediately ──
     if subevent == "UNIT_DIED" then
         if destGUID and activeTotemWindows[destGUID] then
-            DBG("Totem died early:", activeTotemWindows[destGUID].totemSpell)
-            activeTotemWindows[destGUID] = nil
+            EndTotemWindow(destGUID, "died")
         end
         return
     end
