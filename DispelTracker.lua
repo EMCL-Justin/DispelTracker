@@ -161,6 +161,19 @@ local function RecordResist(dispellerName, targetName, dispelSpell)
     DBG(dispellerName, "RESISTED", dispelSpell, "on", targetName)
 end
 
+-- Team detection: a unit's own combat-log reaction flag tells us its team.
+-- "friendly" = the player's team, "hostile" = the enemy team. Recorded once
+-- per name per session (reaction can't change mid-arena).
+local FRIENDLY_MASK = COMBATLOG_OBJECT_REACTION_FRIENDLY or 0x10
+local function RecordTeam(name, flags)
+    if not currentSession or not name or name == "" or not flags then return end
+    currentSession.teams = currentSession.teams or {}
+    if currentSession.teams[name] == nil then
+        currentSession.teams[name] =
+            (bit.band(flags, FRIENDLY_MASK) > 0) and "friendly" or "hostile"
+    end
+end
+
 -- ============================================================
 -- Helpers
 -- ============================================================
@@ -191,6 +204,7 @@ end
 -- Removed-spell importance tiers (color in tooltips)
 -- ============================================================
 
+local C_TIER_LEGENDARY = { r = 1.0,  g = 0.82, b = 0.0  }  -- gold (top tier)
 local C_TIER_IMMUNITY = { r = 0.8,  g = 0.4,  b = 1.0  }  -- purple
 local C_TIER_MAJOR    = { r = 1.0,  g = 0.55, b = 0.1  }  -- orange
 local C_TIER_STRONG   = { r = 0.3,  g = 0.6,  b = 1.0  }  -- blue
@@ -201,6 +215,8 @@ local SPELL_TIER_COLORS = {}
 local function tier(color, ...)
     for _, s in ipairs({...}) do SPELL_TIER_COLORS[s] = color end
 end
+-- Gold — legendary, the highest-value removals
+tier(C_TIER_LEGENDARY, "Elemental Mastery")
 -- Purple — absolute immunities / must-know removals
 tier(C_TIER_IMMUNITY, "Divine Shield", "Ice Block", "Blessing of Protection",
      "Curse of Tongues", "Fear Ward")
@@ -606,7 +622,15 @@ local function RenderDispellers(sessionIdx)
 
         local rightText, rightColor = OffDefLabel(d.total, off, def, totalResists)
         local cl = ClassLabel(d.class)
-        local nameStr = cl and (name.." |cff555555—|r "..cl) or name
+        -- Tint the name by team: green = your team, red = enemy team
+        local team = s.teams and s.teams[name]
+        local nameColored = name
+        if team == "friendly" then
+            nameColored = "|cff66dd66"..name.."|r"
+        elseif team == "hostile" then
+            nameColored = "|cffff5555"..name.."|r"
+        end
+        local nameStr = cl and (nameColored.." |cff555555—|r "..cl) or nameColored
 
         items[#items+1] = {
             label=nameStr, rightText=rightText, rightColor=rightColor,
@@ -843,7 +867,7 @@ end
 
 local function OnCombatLog()
     local _, subevent, _,
-          sourceGUID, sourceName, _, _,
+          sourceGUID, sourceName, sourceFlags, _,
           destGUID,   destName,   _, _,
           _, spellName, _,
           p15, extraSpellName, _, p18
@@ -870,6 +894,7 @@ local function OnCombatLog()
                 expiresAt  = now + TOTEM_DURATION,
             }
             activeTotemWindows[destGUID] = tw
+            RecordTeam(sourceName, sourceFlags)  -- shaman's team, for totem credit later
             -- First cleanse attempt fires the moment the totem is placed,
             -- then every 5s until it expires (ticker self-cancels), dies, or is replaced
             RecordTotemTick(sourceName, spellName)
@@ -902,6 +927,9 @@ local function OnCombatLog()
     end
 
     if not inArena or not currentSession then return end
+
+    -- Record each acting unit's team (their own reaction flag = their side)
+    RecordTeam(sourceName, sourceFlags)
 
     if subevent == "SPELL_CAST_SUCCESS" then
         -- ── Count dispel casts (a cast may strip nothing — that's the point) ──
