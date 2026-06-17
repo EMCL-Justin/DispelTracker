@@ -219,14 +219,15 @@ end
 tier(C_TIER_LEGENDARY, "Elemental Mastery")
 -- Purple — absolute immunities / must-know removals
 tier(C_TIER_IMMUNITY, "Divine Shield", "Ice Block", "Blessing of Protection",
-     "Curse of Tongues", "Fear Ward")
+     "Curse of Tongues", "Fear Ward", "Elemental Mastery")
 -- Orange — game-changing cooldowns
 tier(C_TIER_MAJOR, "Innervate", "Fel Domination", "Avenging Wrath",
      "Power Infusion", "Bloodlust", "Heroism", "Nature's Swiftness")
 -- Blue — strong defensives + magic CC
 tier(C_TIER_STRONG, "Power Word: Shield", "Earth Shield", "Ice Barrier",
      "Icy Veins", "Hammer of Justice", "Repentance", "Polymorph",
-     "Entangling Roots", "Cyclone", "Fear", "Seduction", "Blessing of Sacrifice")
+     "Entangling Roots", "Cyclone", "Fear", "Seduction", "Blessing of Sacrifice",
+     "Blessing of Freedom", "Viper Sting")
 -- Green — HoTs / minor buffs
 tier(C_TIER_MINOR, "Renew", "Regrowth", "Rejuvenation", "Inner Fire",
      "Water Shield", "Exhaustion", "Sated")
